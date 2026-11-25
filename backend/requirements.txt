@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+pydantic[email]
+pyjwt
+bcrypt
+python-multipart
+scikit-learn
+numpy
+pandas
+joblib
+apscheduler
+pytest
+httpx
