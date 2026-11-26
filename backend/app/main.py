@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends
 from sqlalchemy import text
@@ -5,9 +6,14 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from .routers import auth, tramites, admin, notificaciones, publico
 from .services import alertas
+from .ml import predecir
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    try:
+        predecir.cargar()                   # carga (o entrena) los modelos al arrancar
+    except Exception as e:
+        logging.getLogger("ml").error("No se pudieron cargar los modelos: %s", e)
     alertas.iniciar()
     yield
     alertas.detener()

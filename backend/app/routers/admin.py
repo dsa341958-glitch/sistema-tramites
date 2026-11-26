@@ -135,3 +135,45 @@ def ver_auditoria(limite: int = 100, admin: Usuario = Depends(solo_admin),
     q = db.query(Auditoria).order_by(Auditoria.id.desc()).limit(min(limite, 500))
     return [{"fecha": r.fecha, "usuario_id": r.usuario_id, "accion": r.accion,
              "entidad": r.entidad, "detalle": r.detalle, "ip": r.ip} for r in q]
+
+
+# ---------- Machine learning ----------
+from ..models import ModeloML
+from ..ml import entrenar as ml_entrenar, predecir as ml_predecir
+from ..services import prioridad
+
+@router.post("/reentrenar")
+def reentrenar(request: Request, admin: Usuario = Depends(solo_admin),
+               db: Session = Depends(get_db)):
+    version, metricas = ml_entrenar.entrenar()
+    for nombre, m in metricas.items():
+        db.query(ModeloML).filter_by(nombre=nombre, activo=True).update({"activo": False})
+        db.add(ModeloML(nombre=nombre, version=version, metricas=m,
+                        ruta=ml_entrenar.ruta(nombre)))
+    auditoria.registrar(db, admin.id, "REENTRENAR_ML", "modelos_ml", version, request.client.host)
+    db.commit()
+    ml_predecir.recargar()
+    return {"version": version, "metricas": metricas}
+
+@router.get("/modelos")
+def modelos(admin: Usuario = Depends(solo_admin), db: Session = Depends(get_db)):
+    q = db.query(ModeloML).order_by(ModeloML.id.desc()).limit(20)
+    return [{"nombre": m.nombre, "version": m.version, "metricas": m.metricas,
+             "activo": m.activo, "entrenado": m.entrenado} for m in q]
+
+@router.post("/reevaluar")
+def reevaluar_todos(request: Request, admin: Usuario = Depends(solo_admin),
+                    db: Session = Depends(get_db)):
+    """Recalcula prioridad y anomalías de todos los trámites abiertos."""
+    abiertos = db.query(Tramite).filter(Tramite.estado.not_in(CERRADOS)).all()
+    for t in abiertos:
+        prioridad.reevaluar(db, t)
+    auditoria.registrar(db, admin.id, "REEVALUAR", "tramites", f"{len(abiertos)} trámites",
+                        request.client.host)
+    db.commit()
+    return {"reevaluados": len(abiertos), "anomalias": sum(1 for t in abiertos if t.anomalia)}
+
+@router.get("/anomalias", response_model=list[TramiteOut])
+def anomalias(admin: Usuario = Depends(solo_admin), db: Session = Depends(get_db)):
+    q = db.query(Tramite).filter(Tramite.anomalia.is_(True), Tramite.estado.not_in(CERRADOS))
+    return [a_out(t, con_ciudadano=True) for t in q]

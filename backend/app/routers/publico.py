@@ -18,3 +18,21 @@ def consulta(codigo: str, db: Session = Depends(get_db)):
 @router.get("/indicadores")
 def indicadores(db: Session = Depends(get_db)):
     return analitica.kpis(db)
+
+
+from ..ml import predecir
+
+@router.get("/sugerir-tipo")
+def sugerir_tipo(asunto: str):
+    """Sugiere el tipo de trámite a partir del asunto escrito por el ciudadano."""
+    return predecir.sugerir_tipo(asunto)
+
+
+from ..models import TipoTramite
+
+@router.get("/tipos")
+def tipos(db: Session = Depends(get_db)):
+    """Catálogo público de trámites (TUPA): plazo y documentos requeridos."""
+    return [{"nombre": t.nombre, "plazo_dias": t.plazo_dias, "area": t.area.nombre,
+             "documentos_requeridos": [d for d in t.documentos_requeridos.split(",") if d]}
+            for t in db.query(TipoTramite).order_by(TipoTramite.id)]
